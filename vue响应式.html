@@ -9,11 +9,12 @@
 </head>
 
 <body>
+    <!-- <input type="text" v-model="_data.a"> -->
     <div>
-        <div>{{_data.a}}</div>
-        <div>{{_data.a}}</div>
+            <div v-html="a" class="a" id="a"></div>
+            <div v-show="show">show</div>
+            <button onclick="change()">change</button>
     </div>
-    <input type="text" id="in"><button onclick="change()">change</button>
 </body>
 
 <script>
@@ -82,9 +83,9 @@
             Dep.target = null;    // 重置
             return value;
         },
-        getVmVal() {
-            var curval = this.vm;
-            var keys = this.exp.split('.')
+        getVmVal: function () {
+            var curval = this.vm._data,
+                keys = this.exp.split('.');
             keys.forEach(function (key) {
                 curval = curval[key]
             })
@@ -92,194 +93,185 @@
         }
     };
 
-
-
-
-
     function Compile(el, vm) {
-        this.$vm = vm;
-        this.$el = this.isElementNode(el) ? el : document.querySelector(el);
+        this.$vm = vm
+        this.$el = this.isElementNode(el) ? el : document.querySelector(el)
         if (this.$el) {
-            this.$fragment = this.node2Fragment(this.$el);
-            this.init();
-            this.$el.appendChild(this.$fragment);
+            this.$fragment = this.node2Fragment(this.$el)
+            this.init()
+            this.$el.appendChild(this.$fragment)
         }
     }
     Compile.prototype = {
-        node2Fragment: function (el) {
-            var fragment = document.createDocumentFragment(),
-                child = el.firstElementChild;
-            // 将原生节点拷贝到fragment
-            fragment.appendChild(child);
-            return fragment;
-        },
         init: function () {
-            this.compileElement(this.$fragment);
+            this.compileElement(this.$fragment)
         },
-        compileElement: function (el) {
-            var childNodes = el.childNodes,
-                me = this;
-            [].slice.call(childNodes).forEach(function (node) {
-                var text = node.textContent;
-                var reg = /\{\{(.*)\}\}/;
-
-                if (me.isElementNode(node)) {
-                    me.compile(node);
-
-                } else if (me.isTextNode(node) && reg.test(text)) {
-                    me.compileText(node, RegExp.$1);
+        compileElement: function (fragment) {
+            var childNodes = fragment.childNodes,
+                self = this;
+            [].slice.call(childNodes).forEach(function (node,index) {
+                var text = node.textContent,
+                    reg = /\{\{(.*)\}\}/;
+                if (self.isElementNode(node)) {
+                    self.compileElementNode(node,index)
+                } else if (self.isTextNode(node) && reg.test(text)) {
+                    self.compileTextNode(node, RegExp.$1);
                 }
 
                 if (node.childNodes && node.childNodes.length) {
-                    me.compileElement(node);
+                    self.compileElement(node)
                 }
-            });
+
+            })
         },
-        compile: function (node) {
-            var nodeAttrs = node.attributes,
-                me = this;
-            [].slice.call(nodeAttrs).forEach(function (attr) {
-                var attrName = attr.name;
-                if (me.isDirective(attrName)) {
-                    var exp = attr.value;
-                    var dir = attrName.substring(2);
-                    // 事件指令
-                    if (me.isEventDirective(dir)) {
-                        compileUtil.eventHandler(node, me.$vm, exp, dir);
-                        // 普通指令
+        compileElementNode(node,index) {
+            var attrs = node.attributes,
+                self = this;
+            if (!attrs.length) { return }
+            [].slice.call(attrs).forEach(function (attr) {
+                var attrName = attr.name
+                if (self.isDirective(attrName)) {
+                    var exp = attr.value,
+                        dir = attr.name.substring(2);
+                    if (self.isEventDirective(attrName)) {
+                        self.eventHandle(node, self.$vm, dir, exp)
                     } else {
-                        compileUtil[dir] && compileUtil[dir](node, me.$vm, exp);
+                        compileUtil[dir] && compileUtil[dir](node, self.$vm, exp,index)
                     }
-
-                    node.removeAttribute(attrName);
+                    node.removeAttribute(attrName)
                 }
-            });
+            })
         },
-
-        compileText: function (node, exp) {
-            compileUtil.text(node, this.$vm, exp);
+        isDirective(attr) {
+            var n = attr.indexOf('v-')
+            return n === 0
+            // return attr.indexOf('v-') === 0
         },
-
-        isDirective: function (attr) {
-            return attr.indexOf('v-') == 0;
+        isEventDirective(attr) {
+            var n = attr.indexOf('on')
+            return n === 0
         },
-
-        isEventDirective: function (dir) {
-            return dir.indexOf('on') === 0;
-        },
-
-        isElementNode: function (node) {
-            return node.nodeType == 1;
-        },
-
-        isTextNode: function (node) {
-            return node.nodeType == 3;
-        }
-    };
-
-    // 指令处理集合
-    var compileUtil = {
-        text: function (node, vm, exp) {
-            this.bind(node, vm, exp, 'text');
-        },
-
-        html: function (node, vm, exp) {
-            this.bind(node, vm, exp, 'html');
-        },
-
-        model: function (node, vm, exp) {
-            this.bind(node, vm, exp, 'model');
-
-            var me = this,
-                val = this._getVMVal(vm, exp);
-            node.addEventListener('input', function (e) {
-                var newValue = e.target.value;
-                if (val === newValue) {
-                    return;
-                }
-
-                me._setVMVal(vm, exp, newValue);
-                val = newValue;
-            });
-        },
-
-        class: function (node, vm, exp) {
-            this.bind(node, vm, exp, 'class');
-        },
-
-        bind: function (node, vm, exp, dir) {
-            var updaterFn = updater[dir + 'Updater'];
-
-            updaterFn && updaterFn(node, this._getVMVal(vm, exp));
-
-            new Watcher(vm, exp, function (value, oldValue) {
-                updaterFn && updaterFn(node, value, oldValue);
-            });
-        },
-        // 事件处理
-        eventHandler: function (node, vm, exp, dir) {
+        eventHandle(node, vm, dir, exp) {
             var eventType = dir.split(':')[1],
                 fn = vm.$options.methods && vm.$options.methods[exp];
-
             if (eventType && fn) {
-                node.addEventListener(eventType, fn.bind(vm), false);
+                node.addEventListener(eventType, fn.bind(vm))
             }
         },
-
-        _getVMVal: function (vm, exp) {
-            var val = vm;
-            exp = exp.split('.');
-            exp.forEach(function (k) {
-                val = val[k];
-            });
-            return val;
+        compileTextNode(node, exp) {
+            compileUtil.text(node, this.$vm, exp)
         },
-
-        _setVMVal: function (vm, exp, value) {
-            var val = vm;
-            exp = exp.split('.');
-            exp.forEach(function (k, i) {
-                // 非最后一个key，更新val的值
-                if (i < exp.length - 1) {
-                    val = val[k];
-                } else {
-                    val[k] = value;
-                }
-            });
+        isElementNode(el) {
+            return el.nodeType === 1
+        },
+        isTextNode: function (el) {
+            return el.nodeType === 3
+        },
+        node2Fragment: function (el) {
+            var fragment = document.createDocumentFragment(),
+                child = el.firstElementChild;
+            fragment.appendChild(child)
+            return fragment
         }
-    };
+    }
 
+    var compileUtil = {
+        text: function (node, vm, exp) {
+            this.bind(node, vm, exp, 'text')
+        },
+        html: function (node, vm, exp) {
+            this.bind(node, vm, exp, 'html')
+        },
+        if: function (node, vm, exp,index) {
+            var fn = updater.if,
+            val = this.getVmVal(vm,exp),
+            parentNode = node.parentNode;
+            if(!val){
+                parentNode.removeChild(node)
+            }
+            new Watcher(vm, exp, function (newVal, oldVal) {
+                fn && fn(node,parentNode,index, newVal, oldVal)
+            })
+        },
+        show:function(node, vm, exp){
+            this.bind(node, vm, exp, 'show')
+        },
+        bind(node, vm, exp, dir) {
+            var fn = updater[dir]
+            fn && fn(node, this.getVmVal(vm, exp))
+            new Watcher(vm, exp, function (newVal, oldVal) {
+                fn && fn(node, newVal, oldVal)
+            })
+        },
+        getVmVal(vm, exp) {
+            var keys = exp.split('.'),
+                curVal = vm._data;
+            keys.forEach(function (key) {
+                curVal = curVal[key]
+            })
+            if (curVal=='undefined') {
+                throw new Error("data." + exp + " is undefined")
+            }
+            return curVal
+        }
+    }
 
     var updater = {
-        textUpdater: function (node, value) {
-            node.textContent = typeof value == 'undefined' ? '' : value;
+        text: function (node, value) {
+            node.textContent = typeof value === 'undefined' ? '' : value
         },
-
-        htmlUpdater: function (node, value) {
-            node.innerHTML = typeof value == 'undefined' ? '' : value;
+        html: function (node, value) {
+            node.innerHTML = typeof value === 'undefined' ? '' : value
         },
-
-        classUpdater: function (node, value, oldValue) {
-            var className = node.className;
-            className = className.replace(oldValue, '').replace(/\s$/, '');
-
-            var space = className && String(value) ? ' ' : '';
-
-            node.className = className + space + value;
+        if: function (node,parentNode, index,value) {
+            var nodes = parentNode.childNodes;
+            if (value) {
+                if(index===nodes.length-1){
+                    parentNode.appendChild(node)
+                }else{
+                    parentNode.insertBefore(node,nodes[index+1])
+                }
+            } else {
+                parentNode.removeChild(node)
+            }
         },
-
-        modelUpdater: function (node, value, oldValue) {
-            node.value = typeof value == 'undefined' ? '' : value;
+        show:function(node, value){
+            var display = value?'':'none';
+            node.style.display = display
         }
-    };
-    var Mvue = function (options) {
+    }
+
+
+
+
+    function Mvue(options) {
         this.$options = options;
-        var data = this._data = this.$options.data;
+        var self = this,
+            data = this._data = this.$options.data;
+        Object.keys(data).forEach(function (key) {
+            self._proxy(key)    
+        })
         observe(data, this);
         this.$compile = new Compile(options.el || document.body, this)
     }
+    Mvue.prototype = {
+        _proxy: function (key) {
+            var self = this
+            Object.defineProperty(self, key, {
+                configurable: false,
+                enumerable: true,
+                get: function () {
+                    return self._data[key]
+                },
+                set: function (newVal) {
+                    self._data[key] = newVal
+                }
+            })
+        }
+    }
     var m = {
-        a: "init"
+        a: `<div id="div_1" class="div1">Hello World!</div>`,
+        show:false
     }
 
     var FIR = new Mvue({
@@ -287,7 +279,7 @@
     })
 
     function change() {
-        m.a = document.getElementById('in').value;
+        m.show = !m.show
     }
 </script>
 
